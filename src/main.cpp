@@ -1,8 +1,12 @@
-#include <Arduino.h>
-#include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Arduino.h>
+#include <WiFi.h>
+#include <Wire.h>
+#include "credentials.h"
 #include "DHT.h"
+#include "FS.h"
+#include "SPI.h"
 
 // Screen configuration 
 #define SCREEN_WIDTH 128
@@ -21,7 +25,7 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 
 
 // LDR sensor configuration
-#define LDR_PIN 27						   // LDR data pin (choosen)
+#define LDR_PIN 35						   // LDR data pin (choosen)
 #define LDR_MAX_VALUE 4096  // LDR max data (observed, not found in doc)
 
 
@@ -52,11 +56,34 @@ void setup() {
 
 	// LDR setup
 	analogReadResolution(12); // Resolution over 12 bits (0-4095)
+
+
+	// WiFi setup 
+	Serial.println("Connexion au Wi-Fi...");
+	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+	int attempts = 0;
+	while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+		delay(500);
+		Serial.print(".");
+		attempts++;
+	}
+
+	if (WiFi.status() == WL_CONNECTED) {
+		Serial.println("\n✅ Wi-Fi connecté !");
+		Serial.print("📡 SSID : "); Serial.println(WiFi.SSID());
+		Serial.print("📶 IP locale : "); Serial.println(WiFi.localIP());
+	} else {
+		Serial.println("\n❌ Connexion Wi-Fi échouée !");
+		Serial.print("Vérifie le SSID / mot de passe : ");
+		Serial.print(WIFI_SSID);
+		Serial.print(" / ");
+		Serial.println(WIFI_PASSWORD);
+	}
 }
 
 
 void loop() {
-	
 	float temperature = dht.readTemperature();		// in °C
 	float humidity = dht.readHumidity();       				 // in %
 
@@ -76,7 +103,7 @@ void loop() {
 		Serial.print(temperature);
 		Serial.print(" °C | Humidity: ");
 		Serial.print(humidity);
-		Serial.println(" % | LDR value: ");
+		Serial.print(" % | LDR value: ");
 		Serial.println(ldrPercent);
 	}
 	
@@ -90,5 +117,5 @@ void loop() {
 	display.printf("Lum: %.1d%%", ldrPercent);
 	display.display();
 	
-	delay(2000);			// DHT sensor refresh rate
+	delay(5000);			// DHT sensor refresh rate
 }
