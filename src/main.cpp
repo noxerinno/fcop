@@ -7,6 +7,14 @@
 #include "DHT.h"
 #include "FS.h"
 #include "SPI.h"
+#include "time.h"
+
+
+// Debbugging configuration
+#define DEBUG_RTC true
+#define DEBUG_SENSOR_DATA false
+#define DEBUG_WIFI true
+
 
 // Screen configuration 
 #define SCREEN_WIDTH 128
@@ -29,7 +37,65 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 #define LDR_MAX_VALUE 4096  // LDR max data (observed, not found in doc)
 
 
+// NTP configuration
+#define NTP_SERVER "pool.ntp.org"			  // NTP server 
+#define NTP_TIME_ZONE 3600						 // NTP timezone = UTC+1
+#define NTP_DAY_LIGHT_OFFSET 3600		//NTP day ligth offset = summer hour
+bool isRTCSetup = false;
+
+
+
+void setRTC() {
+	// If RTC is not set, connect to Wi-Fi and retreive NTP
+	struct tm timeinfo;
+	if (!getLocalTime(&timeinfo)) {
+		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);		// Set WiFi connection
+
+		while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
+			delay(500);
+			Serial.println("Connecting to Wi-Fi...");
+		}
+		Serial.println("Wi-Fi connected");
+
+		configTime(NTP_TIME_ZONE, NTP_DAY_LIGHT_OFFSET, NTP_SERVER);
+	}
+}
+
+
 void setup() {
+	// WiFi debug 
+	if(Serial && DEBUG_WIFI) {
+		Serial.println("Connexion au Wi-Fi...");
+		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+		int attempts = 0;
+		while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+			delay(500);
+			Serial.print(".");
+			attempts++;
+		}
+
+		if (WiFi.status() == WL_CONNECTED) {
+			Serial.println("\n✅ Wi-Fi connecté !");
+			Serial.print("📡 SSID : "); Serial.println(WiFi.SSID());
+			Serial.print("📶 IP locale : "); Serial.println(WiFi.localIP());
+		} else {
+			Serial.println("\n❌ Connexion Wi-Fi échouée !");
+			Serial.print("Vérifie le SSID / mot de passe : ");
+			Serial.print(WIFI_SSID);
+			Serial.print(" / ");
+			Serial.println(WIFI_PASSWORD);
+		}
+	}
+
+
+	// RTC setup
+	if (!isRTCSetup) {
+		setRTC();
+		isRTCSetup = true;
+	}
+
+
 	// Screen setup
 	Wire.begin();
 	Serial.begin(115200);			// Monitor refresh rate
@@ -56,30 +122,6 @@ void setup() {
 
 	// LDR setup
 	analogReadResolution(12); // Resolution over 12 bits (0-4095)
-
-
-	// WiFi setup 
-	Serial.println("Connexion au Wi-Fi...");
-	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-	int attempts = 0;
-	while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-		delay(500);
-		Serial.print(".");
-		attempts++;
-	}
-
-	if (WiFi.status() == WL_CONNECTED) {
-		Serial.println("\n✅ Wi-Fi connecté !");
-		Serial.print("📡 SSID : "); Serial.println(WiFi.SSID());
-		Serial.print("📶 IP locale : "); Serial.println(WiFi.localIP());
-	} else {
-		Serial.println("\n❌ Connexion Wi-Fi échouée !");
-		Serial.print("Vérifie le SSID / mot de passe : ");
-		Serial.print(WIFI_SSID);
-		Serial.print(" / ");
-		Serial.println(WIFI_PASSWORD);
-	}
 }
 
 
@@ -97,14 +139,35 @@ void loop() {
 	int ldrValue = LDR_MAX_VALUE - analogRead(LDR_PIN); 
 	int ldrPercent = map(ldrValue, 0, LDR_MAX_VALUE, 0, 100);
 	
-	// // Display on the monitor tab 
-	if(Serial) {
+	// Sensors data debug
+	if(Serial && DEBUG_SENSOR_DATA) {
 		Serial.print("Temperature: ");
 		Serial.print(temperature);
 		Serial.print(" °C | Humidity: ");
 		Serial.print(humidity);
 		Serial.print(" % | LDR value: ");
 		Serial.println(ldrPercent);
+	}
+	if(Serial && DEBUG_RTC) {
+		struct tm timeinfo;
+		if (!getLocalTime(&timeinfo)) {
+		  Serial.println("Time retrival error ! ");
+		  return;
+		}
+	  
+		// Date and time display
+		Serial.print("Date/Heure: ");
+		Serial.print(timeinfo.tm_hour);
+		Serial.print(":");
+		Serial.print(timeinfo.tm_min);
+		Serial.print(":");
+		Serial.print(timeinfo.tm_sec);
+		Serial.print(" - ");
+		Serial.print(timeinfo.tm_mday);
+		Serial.print("/");
+		Serial.print(timeinfo.tm_mon + 1); 
+		Serial.print("/");
+		Serial.println(timeinfo.tm_year + 1900);  // Unix timestamp
 	}
 	
 	// Display on screen
