@@ -40,8 +40,12 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 // NTP configuration
 #define NTP_SERVER "pool.ntp.org"			  // NTP server 
 #define NTP_TIME_ZONE 3600						 // NTP timezone = UTC+1
-#define NTP_DAY_LIGHT_OFFSET 3600		//NTP day ligth offset = summer hour
-bool isRTCSetup = false;
+#define NTP_DAY_LIGHT_OFFSET 3600		// NTP day ligth offset = summer hour
+RTC_DATA_ATTR bool isRTCSetup = false;   // To get NTP and load RTC only on the first boot
+
+
+// Logfile configuration
+RTC_DATA_ATTR char logFilename[13]= {0};  		// Allocate 20 char  in RTC memory (4 for the year, 2 for ther month, 2 for the day, 4 for '.log' and 1 for '\0')
 
 
 
@@ -93,6 +97,18 @@ void setup() {
 	if (!isRTCSetup) {
 		setRTC();
 		isRTCSetup = true;
+	}
+
+	struct tm timeinfo;
+	getLocalTime(&timeinfo); 		// Retreive RTC value 
+
+
+	// Log filename setup
+	if (logFilename[0] == '\0') {
+		snprintf(logFilename, sizeof(logFilename), "%04d%02d%02d.log",
+            timeinfo.tm_year + 1900,
+            timeinfo.tm_mon + 1,
+            timeinfo.tm_mday);
 	}
 
 
