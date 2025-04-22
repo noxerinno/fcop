@@ -6,14 +6,15 @@
 #include "credentials.h"
 #include "DHT.h"
 #include "FS.h"
+#include "sensorData.h"
 #include "SPI.h"
 #include "time.h"
 
 
 // Debbugging configuration
-#define DEBUG_RTC true
-#define DEBUG_SENSOR_DATA false
-#define DEBUG_WIFI true
+#define DEBUG_RTC false
+#define DEBUG_SENSOR_DATA true
+#define DEBUG_WIFI false
 
 
 // Screen configuration 
@@ -45,28 +46,67 @@ RTC_DATA_ATTR bool isRTCSetup = false;   // To get NTP and load RTC only on the 
 
 
 // Logfile configuration
+#define LOG_FILE_HEADER "TIMESTAMP,TEMPERATURE,HUMIDITY,LUMINOSITY"
 RTC_DATA_ATTR char logFilename[13]= {0};  		// Allocate 20 char  in RTC memory (4 for the year, 2 for ther month, 2 for the day, 4 for '.log' and 1 for '\0')
-
 
 
 void setRTC() {
 	// If RTC is not set, connect to Wi-Fi and retreive NTP
-	struct tm timeinfo;
-	if (!getLocalTime(&timeinfo)) {
-		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);		// Set WiFi connection
+	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);		// Set WiFi connection
 
-		while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
-			delay(500);
-			Serial.println("Connecting to Wi-Fi...");
-		}
-		Serial.println("Wi-Fi connected");
-
-		configTime(NTP_TIME_ZONE, NTP_DAY_LIGHT_OFFSET, NTP_SERVER);
+	while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
+		delay(500);
+		if(Serial && DEBUG_RTC) {Serial.println("Connecting NTP server...");}
 	}
+	if(Serial && DEBUG_RTC) {Serial.println("NTP value retrieved");}
+
+	configTime(NTP_TIME_ZONE, NTP_DAY_LIGHT_OFFSET, NTP_SERVER);
+}
+
+
+SensorData mesure(int hours, int minutes, int seconds) {
+	// Allocate memory for sensor data struct
+	SensorData mesurement = { 0 };
+	
+	// LDR data read
+	int ldrValue = LDR_MAX_VALUE - analogRead(LDR_PIN); 
+	int ldrPercent = map(ldrValue, 0, LDR_MAX_VALUE, 0, 100);
+	
+	// DHT11 data read 
+	float temperature = dht.readTemperature();		// in °C
+	int humidity = (int)dht.readHumidity();       			// in %
+
+	if (isnan(temperature) || isnan(humidity)) {		  // Check every DHT record validity
+		Serial.println("Erreur de lecture !");
+    	return mesurement;
+	}
+
+	// Initialize sensor data structure
+	snprintf(mesurement.timestamp, sizeof(mesurement.timestamp), "%02d:%02d:%02d",
+			hours,
+            minutes,
+            seconds);
+	mesurement.temperature = temperature;
+	mesurement.humidity = humidity;
+	mesurement.luminosity = ldrPercent;
+
+	return mesurement;
 }
 
 
 void setup() {
+	// DHT setup
+	dht.begin();
+
+
+	// LDR setup
+	analogReadResolution(12); // Resolution over 12 bits (0-4095)
+	
+
+	// Initialize "debugger"
+	Serial.begin(115200);
+
+
 	// WiFi debug 
 	if(Serial && DEBUG_WIFI) {
 		Serial.println("Connexion au Wi-Fi...");
@@ -112,9 +152,18 @@ void setup() {
 	}
 
 
+	// Mesurment
+	SensorData mesurement = mesure(timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+
+	// Sensors data debug
+	if(Serial && DEBUG_SENSOR_DATA) {
+		Serial.println(LOG_FILE_HEADER);
+		Serial.println(mesurement.toString());
+	}
+
+
 	// Screen setup
 	Wire.begin();
-	Serial.begin(115200);			// Monitor refresh rate
 
 	// Screen initialization
 	if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
@@ -130,20 +179,12 @@ void setup() {
 	display.display();
 	display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
 	delay(2000);
-
-
-	// DHT setup
-	dht.begin();
-
-
-	// LDR setup
-	analogReadResolution(12); // Resolution over 12 bits (0-4095)
 }
 
 
 void loop() {
 	float temperature = dht.readTemperature();		// in °C
-	float humidity = dht.readHumidity();       				 // in %
+	int humidity = (int)dht.readHumidity();       			// in %
 
 	// Check every DHT record validity
 	if (isnan(temperature) || isnan(humidity)) {
@@ -191,7 +232,7 @@ void loop() {
 	display.setCursor(0, 0);
 	display.printf("Tem: %.1fC", temperature);
 	display.setCursor(0, 20);
-	display.printf("Hum: %.1f%%", humidity);
+	display.printf("Hum: %d%%", humidity);
 	display.setCursor(0, 40);
 	display.printf("Lum: %.1d%%", ldrPercent);
 	display.display();
