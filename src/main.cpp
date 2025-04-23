@@ -12,11 +12,19 @@
 #include "time.h"
 
 
+// Mesurement interval (in seconds). Intervals smaller than 5s are not recommended 
+#define MESURE_INTERVAL 30 
+RTC_DATA_ATTR bool isFirstBoot = true;   				 // To get NTP and load RTC only on the first boot
+
+
 // Debbugging configuration
 #define DEBUG_LOGS true
 #define DEBUG_RTC false
 #define DEBUG_SENSOR_DATA false
 #define DEBUG_WIFI false
+
+#define MAX_MESUREMENTS 10
+RTC_DATA_ATTR int mesurementCounter =  0;
 
 
 // Screen configuration 
@@ -45,7 +53,6 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 #define NTP_TIME_ZONE 3600									 	 // NTP timezone = UTC+1
 #define NTP_DAY_LIGHT_OFFSET 3600						// NTP day ligth offset = summer hour
 #define NTP_MAX_CONNECTION_ATTEMPTS	10	   // NTP max connection atempts (10 = 5 sec)
-RTC_DATA_ATTR bool isRTCSetup = false;   				 // To get NTP and load RTC only on the first boot
 
 
 // Logfile configuration
@@ -68,9 +75,9 @@ void setRTC() {
 
 	// Wait for the time to be synchronized with NTP
     int attempts = 0;
-    struct tm timeinfo;
+    struct tm timeInfo;
     while (attempts < 10) {  // Retry up to 10 times
-        if (getLocalTime(&timeinfo)) {
+        if (getLocalTime(&timeInfo)) {
             if( DEBUG_RTC) {Serial.println("NTP time synchronized!");}
             break;
         }
@@ -188,6 +195,21 @@ void setupLogSystem(int year, int month, int day) {
 }
 
 
+// Calculate next deep sleep interval (to the micro seconds)
+uint64_t calculateNextInterval() {
+	struct timeval timeInterval;								 // Time interval precise to the microsecond to precisely calculate next deep sleep interval
+	gettimeofday(&timeInterval, nullptr);	 		  // Retreive RTC value
+
+	uint64_t currentSec = timeInterval.tv_sec;						// Get seconds 
+	uint64_t currentMicroSec = timeInterval.tv_usec;	   // Get micro seconds
+
+	uint64_t nextStep = ((currentSec / MESURE_INTERVAL) + 1) * MESURE_INTERVAL;
+	uint64_t deltaInSec = nextStep - currentSec;
+
+	return (deltaInSec * 1000000ULL) - currentMicroSec;
+}
+
+
 void setup() {
 	// DHT setup
 	dht.begin();
@@ -224,30 +246,44 @@ void setup() {
 	}
 
 	// RTC setup
-	if (!isRTCSetup) {
+	if (isFirstBoot) {
 		setRTC();
-		isRTCSetup = true;
 	}
 
-	struct tm timeinfo;
-	getLocalTime(&timeinfo); 		// Retreive RTC value 
+	struct tm timeInfo;						// Time information precise to the second (date to create log filename one first boot & HH:MM:SS to timestamp the log entries )
+	getLocalTime(&timeInfo); 		// Retreive RTC value 
 
 	// SPIFFS & Log setup
-	setupLogSystem(timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday);
+	setupLogSystem(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
 
 	// Take a mesurment
-	SensorData mesurement = mesure(timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+	SensorData mesurement = mesure(timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
 	if( DEBUG_SENSOR_DATA) {
 		Serial.println(LOG_FILE_HEADER);
 		Serial.println(mesurement.toString());
 	}
-
+	
 	// Writing data in log file
 	writeLog(mesurement.toString());
-	if( DEBUG_LOGS) {readLogFile();}
-	
-	delay(2000);
+	if (DEBUG_LOGS) {
+		mesurementCounter++;
+		Serial.println();
+		Serial.printf("MESUREMENT COUNTER  = %d", mesurementCounter);
+		Serial.println();
 
+		if (mesurementCounter >= MAX_MESUREMENTS) {
+			readLogFile();
+
+			while(true) {}
+		}
+	}
+
+	// Deep sleep mode setup 
+	uint64_t interval = calculateNextInterval();
+
+	if (isFirstBoot) {isFirstBoot = false;}
+	esp_sleep_enable_timer_wakeup(interval);
+	esp_deep_sleep_start();
 
 
 
@@ -296,25 +332,25 @@ void loop() {
 	// 	Serial.println(ldrPercent);
 	// }
 	// if( DEBUG_RTC) {
-	// 	struct tm timeinfo;
-	// 	if (!getLocalTime(&timeinfo)) {
+	// 	struct tm timeInfo;
+	// 	if (!getLocalTime(&timeInfo)) {
 	// 	  Serial.println("Time retrival error ! ");
 	// 	  return;
 	// 	}
 	  
 	// 	// Date and time display
 	// 	Serial.print("Date/Heure: ");
-	// 	Serial.print(timeinfo.tm_hour);
+	// 	Serial.print(timeInfo.tm_hour);
 	// 	Serial.print(":");
-	// 	Serial.print(timeinfo.tm_min);
+	// 	Serial.print(timeInfo.tm_min);
 	// 	Serial.print(":");
-	// 	Serial.print(timeinfo.tm_sec);
+	// 	Serial.print(timeInfo.tm_sec);
 	// 	Serial.print(" - ");
-	// 	Serial.print(timeinfo.tm_mday);
+	// 	Serial.print(timeInfo.tm_mday);
 	// 	Serial.print("/");
-	// 	Serial.print(timeinfo.tm_mon + 1); 
+	// 	Serial.print(timeInfo.tm_mon + 1); 
 	// 	Serial.print("/");
-	// 	Serial.println(timeinfo.tm_year + 1900);  // Unix timestamp
+	// 	Serial.println(timeInfo.tm_year + 1900);  // Unix timestamp
 	// }
 	
 	// // Display on screen
