@@ -1,6 +1,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include "credentials.h"
@@ -13,18 +14,18 @@
 
 
 // Mesurement interval (in seconds). Intervals smaller than 5s are not recommended 
-#define MESURE_INTERVAL 30 
+#define MESURE_INTERVAL 30
 RTC_DATA_ATTR bool isFirstBoot = true;   				 // To get NTP and load RTC only on the first boot
 
 
 // Debbugging configuration
-#define DEBUG_LOGS true
+#define DEBUG_LOGS false
 #define DEBUG_RTC false
 #define DEBUG_SENSOR_DATA false
 #define DEBUG_WIFI false
 
-#define MAX_MESUREMENTS 10
-RTC_DATA_ATTR int mesurementCounter =  0;
+#define MAX_CYCLES 2
+RTC_DATA_ATTR int cycleCounter =  0;
 
 
 // Screen configuration 
@@ -67,7 +68,7 @@ void setRTC() {
 
 	while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
 		delay(500);
-		if( DEBUG_RTC) {Serial.println("Connecting NTP server...");}
+		if( DEBUG_RTC) {Serial.println("Connecting to WiFi...");}
 	}
 	if( DEBUG_RTC) {Serial.println("Connected");}
 
@@ -164,7 +165,7 @@ void readLogFile() {
 
 
 // Setup log system
-void setupLogSystem(int year, int month, int day) {
+void mountSPIFFS() {
 	// Mount SPIFFS
 	if (!SPIFFS.begin(true)) {
         if( DEBUG_LOGS) {Serial.println("Unable to mount SPIFFS, trying to format...");}
@@ -176,23 +177,38 @@ void setupLogSystem(int year, int month, int day) {
     } else {
 		if( DEBUG_LOGS) {Serial.println("SPIFFS initialized");}
 	}
-    
-	// Initialize log file on first boot
-	if (logFilename[0] == '\0') {
-		snprintf(logFilename, sizeof(logFilename), "/%04d%02d%02d.log",
-            year + 1900,
-            month + 1,
-            day);
-
-		if(DEBUG_LOGS) {
-			Serial.print("Logfile : ");
-			Serial.println(logFilename);
-		}
-		
-		// Write csv header
-		writeLog(LOG_FILE_HEADER);
-	}	
 }
+
+
+// Initialize log file
+void setLogFilename(int year, int month, int day) {
+	snprintf(logFilename, sizeof(logFilename), "/%04d%02d%02d.log",
+		year + 1900,
+		month + 1,
+		day);
+
+	if(DEBUG_LOGS) {
+		Serial.print("Logfile : ");
+		Serial.println(logFilename);
+	}
+	
+	// Write csv header
+	writeLog(LOG_FILE_HEADER);
+}
+
+
+// Delet log file
+void deleteCurrentLogFile() {
+	if (SPIFFS.exists(logFilename)) {
+		if (SPIFFS.remove(logFilename)) {
+				if(DEBUG_LOGS) {Serial.println("Log file successfully deleted");}
+			} else {
+				if(DEBUG_LOGS) {Serial.println("Unable to delete log file");}
+			}
+		} else {
+			if(DEBUG_LOGS) {Serial.println("Unable to locate log file");}
+		}
+	}
 
 
 // Calculate next deep sleep interval (to the micro seconds)
@@ -210,12 +226,88 @@ uint64_t calculateNextInterval() {
 }
 
 
+// Send log file to my personnal drive
+void sendLogFileToDrive() {
+	// Connect to Wi-Fi to send log file to drive
+	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);		// Set WiFi connection
+
+	while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
+		delay(500);
+		if( DEBUG_LOGS) {Serial.println("Connecting to WiFi...");}
+	}
+	if( DEBUG_LOGS) {Serial.println("Connected");}
+
+	// Read log file
+	File logFile = SPIFFS.open(logFilename, "r");
+	if (!logFile) {
+		if( DEBUG_LOGS) {Serial.println("Error : unable to  find log file");}
+	  return;
+	}
+	
+	String logFileContent = "";
+	while (logFile.available()) {
+	  logFileContent += (char)logFile.read();
+	}
+	logFile.close();
+
+	// Serial.println(String(logFilename).substring(1));
+
+	// Request creation
+	HTTPClient http;
+	http.begin("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
+	http.addHeader("Authorization", String("Bearer ") + DRIVE_ACCESS_TOKEN);
+	http.addHeader("Content-Type", "multipart/related; boundary=foo_bar_baz");
+
+	//  Metadata creation
+	String metadata = 
+    "--foo_bar_baz\r\n"
+    "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+    "{\r\n"
+    "  \"name\": \"" + String(logFilename).substring(1) + "\",\r\n" // Nom du fichier sans "/"
+    "  \"parents\": [\"" + String(DRIVE_FOLDER_ID) + "\"]\r\n"
+    "}\r\n";
+
+	// Media creation
+	String media = 
+    "--foo_bar_baz\r\n"
+    "Content-Type: text/plain\r\n\r\n" +
+    logFileContent + "\r\n" +
+    "--foo_bar_baz--";
+
+	String body = metadata + media;
+	int httpResponseCode = http.POST((uint8_t*)body.c_str(), body.length());
+
+	if (DEBUG_LOGS) {
+		if (httpResponseCode > 0) {
+			Serial.printf("HTTP Response: %d\n", httpResponseCode);
+			Serial.println(http.getString());
+		} else {
+			Serial.printf("HTTP error: %s\n", http.errorToString(httpResponseCode).c_str());
+		}
+	}
+	
+	http.end();
+
+	WiFi.disconnect();
+	WiFi.mode(WIFI_OFF);
+}
+
+
 void setup() {
 	// DHT setup
 	dht.begin();
 
 	// LDR setup
 	analogReadResolution(12); // Resolution over 12 bits (0-4095)
+
+	// // Screen setup
+	// Wire.begin();
+
+	// // Screen initialization
+	// if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+    // 	Serial.println(F("Échec de l'initialisation de l'écran OLED"));
+   	// 	while (true); // Stop si échec
+  	// }
 
 	// Initialize "debugger"
 	Serial.begin(115200);
@@ -246,15 +338,14 @@ void setup() {
 	}
 
 	// RTC setup
-	if (isFirstBoot) {
-		setRTC();
-	}
+	if (isFirstBoot) {setRTC();}
 
 	struct tm timeInfo;						// Time information precise to the second (date to create log filename one first boot & HH:MM:SS to timestamp the log entries )
 	getLocalTime(&timeInfo); 		// Retreive RTC value 
 
 	// SPIFFS & Log setup
-	setupLogSystem(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
+	mountSPIFFS();																																						// Mount the file system
+	if (isFirstBoot) {setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);}		// Initialize log file name on first boot
 
 	// Take a mesurment
 	SensorData mesurement = mesure(timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
@@ -266,16 +357,23 @@ void setup() {
 	// Writing data in log file
 	writeLog(mesurement.toString());
 	if (DEBUG_LOGS) {
-		mesurementCounter++;
+		cycleCounter++;
 		Serial.println();
-		Serial.printf("MESUREMENT COUNTER  = %d", mesurementCounter);
+		Serial.printf("CYCLES COUNTER  = %d", cycleCounter);
 		Serial.println();
 
-		if (mesurementCounter >= MAX_MESUREMENTS) {
+		if (cycleCounter >= MAX_CYCLES) {
 			readLogFile();
 
 			while(true) {}
 		}
+	}
+
+	// Log file cloud saving setup
+	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
+		sendLogFileToDrive();
+		deleteCurrentLogFile();
+		setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
 	}
 
 	// Deep sleep mode setup 
@@ -288,23 +386,9 @@ void setup() {
 
 
 
-	// // Screen setup
-	// Wire.begin();
 
-	// // Screen initialization
-	// if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    // 	Serial.println(F("Échec de l'initialisation de l'écran OLED"));
-   	// 	while (true); // Stop si échec
-  	// }
 
-	// display.clearDisplay();
-	// display.setTextSize(2);             						    // Text size
-	// display.setTextColor(SSD1306_WHITE); 		// Text color
-	// display.setCursor(10, 25);									 // Text position
-	// display.println(F("Bienvenue"));				 	   // Text to display
-	// display.display();
-	// display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
-	// delay(2000);
+	
 }
 
 
