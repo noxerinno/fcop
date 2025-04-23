@@ -8,14 +8,13 @@
 #include "DHT.h"
 #include "FS.h"
 #include "sensorData.h"
-#include "SPI.h"
 #include "SPIFFS.h"
 #include "time.h"
 
 
 // Mesurement interval (in seconds). Intervals smaller than 5s are not recommended 
 #define MESURE_INTERVAL 30
-RTC_DATA_ATTR bool isFirstBoot = true;   				 // To get NTP and load RTC only on the first boot
+RTC_DATA_ATTR bool isFirstBoot = true; 
 
 
 // Debbugging configuration
@@ -59,6 +58,18 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 // Logfile configuration
 #define LOG_FILE_HEADER "TIMESTAMP,TEMPERATURE,HUMIDITY,LUMINOSITY"
 RTC_DATA_ATTR char logFilename[14]= {0};  		// Allocate 20 char  in RTC memory (1 for the '/', 4 for the year, 2 for ther month, 2 for the day, 4 for '.log' and 1 for '\0')
+
+
+// Display welcome message
+void displayWelcomeMessage() {
+	display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
+	display.clearDisplay();
+	display.setTextSize(2);             						    // Text size
+	display.setTextColor(SSD1306_WHITE); 		// Text color
+	display.setCursor(10, 25);									 // Text position
+	display.println(F("Bienvenue"));				 	   // Text to display
+	display.display();
+}
 
 
 // Initialize RTC from NTP value retreive from internet
@@ -211,6 +222,21 @@ void deleteCurrentLogFile() {
 	}
 
 
+// Display mesurement on screen
+void displayMesurement(SensorData mesurement) {
+	display.clearDisplay();
+	display.setCursor(0, 0);
+	display.printf("Tem: %.1fC", mesurement.temperature);
+	display.setCursor(0, 20);
+	display.printf("Hum: %d%%", mesurement.humidity);
+	display.setCursor(0, 40);
+	display.printf("Lum: %.1d%%", mesurement.luminosity);
+	display.display();
+
+	delay(500);
+}
+
+
 // Calculate next deep sleep interval (to the micro seconds)
 uint64_t calculateNextInterval() {
 	struct timeval timeInterval;								 // Time interval precise to the microsecond to precisely calculate next deep sleep interval
@@ -294,23 +320,30 @@ void sendLogFileToDrive() {
 
 
 void setup() {
+	// Initialize "debugger"
+	Serial.begin(115200);
+
 	// DHT setup
 	dht.begin();
 
 	// LDR setup
 	analogReadResolution(12); // Resolution over 12 bits (0-4095)
 
-	// // Screen setup
-	// Wire.begin();
+	// Screen setup
+	Wire.begin();
+	// delay(1000); 
 
-	// // Screen initialization
-	// if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    // 	Serial.println(F("Échec de l'initialisation de l'écran OLED"));
-   	// 	while (true); // Stop si échec
-  	// }
+	// Wire.beginTransmission(OLED_ADDRESS);			// OLED manual soft-reset (I2C only - no hardware RST)
+	// Wire.write(0x00); // Command mode
+	// Wire.write(0xAE); // SSD1306_DISPLAYOFF
+	// Wire.endTransmission();
+	// delay(1000); 
 
-	// Initialize "debugger"
-	Serial.begin(115200);
+	if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+    	Serial.println(F("Unable to initialize OLED screen"));
+   		while (true);
+  	}
+	if (isFirstBoot) {displayWelcomeMessage();}
 
 	// WiFi debug 
 	if( DEBUG_WIFI) {
@@ -364,10 +397,12 @@ void setup() {
 
 		if (cycleCounter >= MAX_CYCLES) {
 			readLogFile();
-
 			while(true) {}
 		}
 	}
+
+	// Display on mesurement on screen
+	displayMesurement(mesurement);
 
 	// Log file cloud saving setup
 	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
@@ -381,71 +416,9 @@ void setup() {
 
 	if (isFirstBoot) {isFirstBoot = false;}
 	esp_sleep_enable_timer_wakeup(interval);
-	esp_deep_sleep_start();
-
-
-
-
-
-
-	
+	esp_light_sleep_start();
 }
 
 
 void loop() {
-	// float temperature = dht.readTemperature();		// in °C
-	// int humidity = (int)dht.readHumidity();       			// in %
-
-	// // Check every DHT record validity
-	// if (isnan(temperature) || isnan(humidity)) {
-	// 	Serial.println("Erreur de lecture !");
-    // 	return;
-	// }
-
-	// // LDR data read
-	// int ldrValue = LDR_MAX_VALUE - analogRead(LDR_PIN); 
-	// int ldrPercent = map(ldrValue, 0, LDR_MAX_VALUE, 0, 100);
-	
-	// // Sensors data debug
-	// if( DEBUG_SENSOR_DATA) {
-	// 	Serial.print("Temperature: ");
-	// 	Serial.print(temperature);
-	// 	Serial.print(" °C | Humidity: ");
-	// 	Serial.print(humidity);
-	// 	Serial.print(" % | LDR value: ");
-	// 	Serial.println(ldrPercent);
-	// }
-	// if( DEBUG_RTC) {
-	// 	struct tm timeInfo;
-	// 	if (!getLocalTime(&timeInfo)) {
-	// 	  Serial.println("Time retrival error ! ");
-	// 	  return;
-	// 	}
-	  
-	// 	// Date and time display
-	// 	Serial.print("Date/Heure: ");
-	// 	Serial.print(timeInfo.tm_hour);
-	// 	Serial.print(":");
-	// 	Serial.print(timeInfo.tm_min);
-	// 	Serial.print(":");
-	// 	Serial.print(timeInfo.tm_sec);
-	// 	Serial.print(" - ");
-	// 	Serial.print(timeInfo.tm_mday);
-	// 	Serial.print("/");
-	// 	Serial.print(timeInfo.tm_mon + 1); 
-	// 	Serial.print("/");
-	// 	Serial.println(timeInfo.tm_year + 1900);  // Unix timestamp
-	// }
-	
-	// // Display on screen
-	// display.clearDisplay();
-	// display.setCursor(0, 0);
-	// display.printf("Tem: %.1fC", temperature);
-	// display.setCursor(0, 20);
-	// display.printf("Hum: %d%%", humidity);
-	// display.setCursor(0, 40);
-	// display.printf("Lum: %.1d%%", ldrPercent);
-	// display.display();
-	
-	// delay(5000);			// DHT sensor refresh rate
 }
