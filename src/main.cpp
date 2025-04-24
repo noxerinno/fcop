@@ -21,10 +21,12 @@ RTC_DATA_ATTR bool isFirstBoot = true;
 #define DEBUG_LOGS false
 #define DEBUG_RTC false
 #define DEBUG_SENSOR_DATA false
+#define DEBUG_TOKEN true
 #define DEBUG_WIFI false
 
-#define MAX_CYCLES 2
+#define MAX_CYCLES 5
 RTC_DATA_ATTR int cycleCounter =  0;
+RTC_DATA_ATTR SensorData lastMesurement;
 
 
 // Screen configuration 
@@ -60,6 +62,24 @@ DHT dht(DHT_PIN, DHT_TYPE);		// Creating DHT object
 RTC_DATA_ATTR char logFilename[14]= {0};  		// Allocate 20 char  in RTC memory (1 for the '/', 4 for the year, 2 for ther month, 2 for the day, 4 for '.log' and 1 for '\0')
 
 
+// Touch wake up configuration
+#define TOUCH_WAKE_UP_PAD T0
+#define TOUCH_WAKE_UP_THRESHOLD 40
+#define MESUREMENT_DISPLAY_DURATION 5000
+
+
+// Initialize screen
+void initializeScreen() {
+	Wire.begin();
+	delay(100);
+
+	if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+    	Serial.println(F("Unable to initialize OLED screen"));
+   		while (true);
+  	}
+}
+
+
 // Display welcome message
 void displayWelcomeMessage() {
 	display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
@@ -69,11 +89,14 @@ void displayWelcomeMessage() {
 	display.setCursor(10, 25);									 // Text position
 	display.println(F("Bienvenue"));				 	   // Text to display
 	display.display();
+
+	delay(2000);
+	display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 
 // Initialize RTC from NTP value retreive from internet
-void setRTC() {
+tm setRTC() {
 	// If RTC is not set, connect to Wi-Fi and retreive NTP
 	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);		// Set WiFi connection
 
@@ -103,6 +126,43 @@ void setRTC() {
 
 	WiFi.disconnect();
 	WiFi.mode(WIFI_OFF);
+
+	return timeInfo;
+}
+
+
+// Sensors initialization
+void sensorsInitialization() {
+	// DHT setup
+	dht.begin();
+
+	// LDR setup
+	analogReadResolution(12); // Resolution over 12 bits (0-4095)
+
+	/// WiFi debug 
+	if( DEBUG_WIFI) {
+		Serial.println("Connexion au Wi-Fi...");
+		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+		int attempts = 0;
+		while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+			delay(500);
+			Serial.print(".");
+			attempts++;
+		}
+
+		if (WiFi.status() == WL_CONNECTED) {
+			Serial.println("\n✅ Wi-Fi connecté !");
+			Serial.print("📡 SSID : "); Serial.println(WiFi.SSID());
+			Serial.print("📶 IP locale : "); Serial.println(WiFi.localIP());
+		} else {
+			Serial.println("\n❌ Connexion Wi-Fi échouée !");
+			Serial.print("Vérifie le SSID / mot de passe : ");
+			Serial.print(WIFI_SSID);
+			Serial.print(" / ");
+			Serial.println(WIFI_PASSWORD);
+		}
+	}
 }
 
 
@@ -133,24 +193,12 @@ SensorData mesure(int hours, int minutes, int seconds) {
 	mesurement.humidity = humidity;
 	mesurement.luminosity = ldrPercent;
 
+	if( DEBUG_SENSOR_DATA) {
+		Serial.println(LOG_FILE_HEADER);
+		Serial.println(mesurement.toString());
+	}
+
 	return mesurement;
-}
-
-
-// Write a new data line in log file
-void writeLog(const char* mesurementString) {
-	File file = SPIFFS.open(logFilename, "a");  // Ouvre en mode "append"
-
-    if (!file) {
-        if( DEBUG_LOGS) {Serial.println("Could not open log file");}
-        return;
-    }
-
-    // Écriture dans le fichier
-    file.println(mesurementString);  // Ajoute un saut de ligne après chaque entrée
-
-    // Fermer le fichier
-    file.close();
 }
 
 
@@ -173,6 +221,35 @@ void readLogFile() {
 
     file.close();
 } 
+
+
+// Write a new data line in log file
+void writeLog(const char* mesurementString) {
+	File file = SPIFFS.open(logFilename, "a");  // Ouvre en mode "append"
+
+    if (!file) {
+        if( DEBUG_LOGS) {Serial.println("Could not open log file");}
+        return;
+    }
+
+    // Écriture dans le fichier
+    file.println(mesurementString);  // Ajoute un saut de ligne après chaque entrée
+
+    // Fermer le fichier
+    file.close();
+
+	if (DEBUG_LOGS) {
+		cycleCounter++;
+		Serial.println();
+		Serial.printf("CYCLES COUNTER  = %d", cycleCounter);
+		Serial.println();
+
+		if (cycleCounter >= MAX_CYCLES) {
+			readLogFile();
+			while(true) {}
+		}
+	}
+}
 
 
 // Setup log system
@@ -223,17 +300,24 @@ void deleteCurrentLogFile() {
 
 
 // Display mesurement on screen
-void displayMesurement(SensorData mesurement) {
+void displayMesurement() {
 	display.clearDisplay();
+	delay(10000);
 	display.setCursor(0, 0);
-	display.printf("Tem: %.1fC", mesurement.temperature);
+	display.printf("Tem: %.1fC", lastMesurement.temperature);
 	display.setCursor(0, 20);
-	display.printf("Hum: %d%%", mesurement.humidity);
+	display.printf("Hum: %d%%", lastMesurement.humidity);
 	display.setCursor(0, 40);
-	display.printf("Lum: %.1d%%", mesurement.luminosity);
+	display.printf("Lum: %.1d%%", lastMesurement.luminosity);
+	delay(10000);
 	display.display();
+	delay(10000);
 
-	delay(500);
+	Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
+	Serial.println();
+
+	delay(MESUREMENT_DISPLAY_DURATION);
+	display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 
@@ -252,6 +336,56 @@ uint64_t calculateNextInterval() {
 }
 
 
+// Retreive access token from refresh token
+String getAccessToken() {
+    HTTPClient http;
+
+    // Construire l'URL pour obtenir un nouveau token
+    String url = "https://oauth2.googleapis.com/token";
+    
+    // Créer le corps de la requête avec les paramètres nécessaires
+    String payload = "grant_type=refresh_token&refresh_token=" + String(DRIVE_REFRESH_TOKEN) +
+                     "&client_id=" + String(DRIVE_CLIENT_ID) + 
+                     "&client_secret=" + String(DRIVE_CLIENT_SECRET);
+
+    // Configurer la requête HTTP
+    http.begin(url);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    // Envoyer la requête et obtenir la réponse
+    int httpResponseCode = http.POST(payload);
+
+    String accessToken = "";
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+        
+		// Access token extraction from response 
+        int tokenKeyIndex = response.indexOf("\"access_token\":");
+        if (tokenKeyIndex != -1) {
+            int quoteStart = response.indexOf("\"", tokenKeyIndex + 15); // trouve le premier guillemet après "access_token":
+            int quoteEnd = response.indexOf("\"", quoteStart + 1);       // trouve le second guillemet (fin du token)
+
+            if (quoteStart != -1 && quoteEnd != -1) {
+                accessToken = response.substring(quoteStart + 1, quoteEnd);
+            }
+        }
+
+		if(DEBUG_TOKEN) {
+			Serial.println(response);
+			Serial.println(accessToken);
+			Serial.println();
+		}
+    } else {
+        if (DEBUG_TOKEN) {
+            Serial.printf("HTTP error during token refresh: %s\n", http.errorToString(httpResponseCode).c_str());
+        }
+    }
+
+    http.end();
+    return accessToken;
+}
+
+
 // Send log file to my personnal drive
 void sendLogFileToDrive() {
 	// Connect to Wi-Fi to send log file to drive
@@ -259,14 +393,14 @@ void sendLogFileToDrive() {
 
 	while (WiFi.status() != WL_CONNECTED) {		// Try to connect to WiFi
 		delay(500);
-		if( DEBUG_LOGS) {Serial.println("Connecting to WiFi...");}
+		if( DEBUG_TOKEN) {Serial.println("Connecting to WiFi...");}
 	}
-	if( DEBUG_LOGS) {Serial.println("Connected");}
+	if( DEBUG_TOKEN) {Serial.println("Connected");}
 
 	// Read log file
 	File logFile = SPIFFS.open(logFilename, "r");
 	if (!logFile) {
-		if( DEBUG_LOGS) {Serial.println("Error : unable to  find log file");}
+		if( DEBUG_TOKEN) {Serial.println("Error : unable to  find log file");}
 	  return;
 	}
 	
@@ -276,12 +410,15 @@ void sendLogFileToDrive() {
 	}
 	logFile.close();
 
-	// Serial.println(String(logFilename).substring(1));
-
 	// Request creation
 	HTTPClient http;
 	http.begin("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
-	http.addHeader("Authorization", String("Bearer ") + DRIVE_ACCESS_TOKEN);
+	
+	Serial.println();
+	Serial.printf("Bearer %s", getAccessToken());
+	Serial.println();
+
+	http.addHeader("Authorization", String("Bearer ") + getAccessToken());
 	http.addHeader("Content-Type", "multipart/related; boundary=foo_bar_baz");
 
 	//  Metadata creation
@@ -303,7 +440,7 @@ void sendLogFileToDrive() {
 	String body = metadata + media;
 	int httpResponseCode = http.POST((uint8_t*)body.c_str(), body.length());
 
-	if (DEBUG_LOGS) {
+	if (DEBUG_TOKEN) {
 		if (httpResponseCode > 0) {
 			Serial.printf("HTTP Response: %d\n", httpResponseCode);
 			Serial.println(http.getString());
@@ -323,100 +460,74 @@ void setup() {
 	// Initialize "debugger"
 	Serial.begin(115200);
 
-	// DHT setup
-	dht.begin();
-
-	// LDR setup
-	analogReadResolution(12); // Resolution over 12 bits (0-4095)
-
-	// Screen setup
-	Wire.begin();
-	// delay(1000); 
-
-	// Wire.beginTransmission(OLED_ADDRESS);			// OLED manual soft-reset (I2C only - no hardware RST)
-	// Wire.write(0x00); // Command mode
-	// Wire.write(0xAE); // SSD1306_DISPLAYOFF
-	// Wire.endTransmission();
-	// delay(1000); 
-
-	if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    	Serial.println(F("Unable to initialize OLED screen"));
-   		while (true);
-  	}
-	if (isFirstBoot) {displayWelcomeMessage();}
-
-	// WiFi debug 
-	if( DEBUG_WIFI) {
-		Serial.println("Connexion au Wi-Fi...");
-		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-		int attempts = 0;
-		while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-			delay(500);
-			Serial.print(".");
-			attempts++;
-		}
-
-		if (WiFi.status() == WL_CONNECTED) {
-			Serial.println("\n✅ Wi-Fi connecté !");
-			Serial.print("📡 SSID : "); Serial.println(WiFi.SSID());
-			Serial.print("📶 IP locale : "); Serial.println(WiFi.localIP());
-		} else {
-			Serial.println("\n❌ Connexion Wi-Fi échouée !");
-			Serial.print("Vérifie le SSID / mot de passe : ");
-			Serial.print(WIFI_SSID);
-			Serial.print(" / ");
-			Serial.println(WIFI_PASSWORD);
-		}
-	}
-
-	// RTC setup
-	if (isFirstBoot) {setRTC();}
-
 	struct tm timeInfo;						// Time information precise to the second (date to create log filename one first boot & HH:MM:SS to timestamp the log entries )
-	getLocalTime(&timeInfo); 		// Retreive RTC value 
 
-	// SPIFFS & Log setup
-	mountSPIFFS();																																						// Mount the file system
-	if (isFirstBoot) {setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);}		// Initialize log file name on first boot
+	
+	// First boot handeling
+	if (isFirstBoot) {
+		initializeScreen();
+		displayWelcomeMessage();
 
-	// Take a mesurment
-	SensorData mesurement = mesure(timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
-	if( DEBUG_SENSOR_DATA) {
-		Serial.println(LOG_FILE_HEADER);
-		Serial.println(mesurement.toString());
+		timeInfo = setRTC();				// RTC setup
+		setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
+		Serial.println("FIRST BOOT !");
 	}
 	
-	// Writing data in log file
-	writeLog(mesurement.toString());
-	if (DEBUG_LOGS) {
-		cycleCounter++;
-		Serial.println();
-		Serial.printf("CYCLES COUNTER  = %d", cycleCounter);
-		Serial.println();
+	
+	getLocalTime(&timeInfo); 		// Retreive RTC value 
+	Serial.printf("WOKE UP AT %02d:%02d:%02d", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+	Serial.println();
 
-		if (cycleCounter >= MAX_CYCLES) {
-			readLogFile();
-			while(true) {}
-		}
+
+	// On timer wakeup, take mesurement and log it memory 
+	if (isFirstBoot || esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
+		// Sensor initialization
+		sensorsInitialization();
+
+		// SPIFFS & Log setup
+		mountSPIFFS();		// Mount the file system
+
+		// Take a mesurment
+		SensorData mesurement = mesure(timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+		lastMesurement = mesurement;
+
+		// Writing data in log file
+		writeLog(mesurement.toString());
 	}
 
-	// Display on mesurement on screen
-	displayMesurement(mesurement);
+
+	// // On touch wake up, display last mesurement on screen for 5sec
+	// if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TOUCHPAD) {
+	// 	Serial.println("WOKE UP FROM TOUCHPAD");
+
+	// 	// Screen setup
+	// 	initializeScreen();
+
+	// 	// Display on mesurement on screen
+	// 	displayMesurement();
+	// }
+
 
 	// Log file cloud saving setup
 	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
+		mountSPIFFS();
 		sendLogFileToDrive();
 		deleteCurrentLogFile();
 		setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
 	}
 
+
 	// Deep sleep mode setup 
 	uint64_t interval = calculateNextInterval();
 
 	if (isFirstBoot) {isFirstBoot = false;}
+	touchSleepWakeUpEnable(TOUCH_WAKE_UP_PAD, TOUCH_WAKE_UP_THRESHOLD);		// Touch wake up configuration
 	esp_sleep_enable_timer_wakeup(interval);
-	esp_light_sleep_start();
+
+	getLocalTime(&timeInfo); 
+	Serial.printf("GOING TO SLEEP AT %02d:%02d:%02d FOR %llu\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec, interval);
+
+	esp_deep_sleep_start();
 }
 
 
