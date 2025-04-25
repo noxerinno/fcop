@@ -91,6 +91,8 @@ void displayWelcomeMessage() {
 	display.display();
 
 	delay(2000);
+	display.clearDisplay();
+	display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
 	display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
@@ -302,18 +304,20 @@ void deleteCurrentLogFile() {
 // Display mesurement on screen
 void displayMesurement() {
 	display.clearDisplay();
-	delay(10000);
+	// display.display();
+	// display.clearDisplay();
+	delay(1000);
 	display.setCursor(0, 0);
 	display.printf("Tem: %.1fC", lastMesurement.temperature);
 	display.setCursor(0, 20);
 	display.printf("Hum: %d%%", lastMesurement.humidity);
 	display.setCursor(0, 40);
-	display.printf("Lum: %.1d%%", lastMesurement.luminosity);
-	delay(10000);
+	display.printf("Lum: %d%%", lastMesurement.luminosity);
+	delay(2000);
 	display.display();
-	delay(10000);
+	delay(2000);
 
-	Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
+	Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
 	Serial.println();
 
 	delay(MESUREMENT_DISPLAY_DURATION);
@@ -413,10 +417,6 @@ void sendLogFileToDrive() {
 	// Request creation
 	HTTPClient http;
 	http.begin("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
-	
-	Serial.println();
-	Serial.printf("Bearer %s", getAccessToken());
-	Serial.println();
 
 	http.addHeader("Authorization", String("Bearer ") + getAccessToken());
 	http.addHeader("Content-Type", "multipart/related; boundary=foo_bar_baz");
@@ -496,16 +496,47 @@ void setup() {
 	}
 
 
-	// // On touch wake up, display last mesurement on screen for 5sec
-	// if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TOUCHPAD) {
-	// 	Serial.println("WOKE UP FROM TOUCHPAD");
+	// On touch wake up, display last mesurement on screen for 5sec
+	if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TOUCHPAD) {
+		Serial.println("WOKE UP FROM TOUCHPAD");
 
-	// 	// Screen setup
-	// 	initializeScreen();
+		// Screen setup
+		// initializeScreen();
 
-	// 	// Display on mesurement on screen
-	// 	displayMesurement();
-	// }
+		// Display on mesurement on screen
+		// displayMesurement();
+
+		Wire.begin();
+		delay(100);
+
+		if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
+			Serial.println(F("Unable to initialize OLED screen"));
+			while (true);
+		} else {
+			Serial.println("Screen successfully initialized");
+		}
+
+		delay(1000);
+		display.clearDisplay();
+		// display.display();
+		// display.clearDisplay();
+		delay(1000);
+		display.setCursor(0, 0);
+		display.printf("Tem: %.1fC", lastMesurement.temperature);
+		display.setCursor(0, 20);
+		display.printf("Hum: %d%%", lastMesurement.humidity);
+		display.setCursor(0, 40);
+		display.printf("Lum: %d%%", lastMesurement.luminosity);
+		delay(2000);
+		display.display();
+		delay(2000);
+
+		Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
+		Serial.println();
+
+		delay(MESUREMENT_DISPLAY_DURATION);
+		display.ssd1306_command(SSD1306_DISPLAYOFF);
+	}
 
 
 	// Log file cloud saving setup
