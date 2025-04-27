@@ -83,7 +83,7 @@ void setup() {
 
 
 	// Log file cloud saving setup
-	if ((timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) || esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TOUCHPAD) {
+	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
 		mountSPIFFS();
 		sendLogFileToDrive();
 		deleteCurrentLogFile();
