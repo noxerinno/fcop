@@ -14,7 +14,9 @@
 
 // Mesurement interval (in seconds). Intervals smaller than 5s are not recommended 
 #define MESURE_INTERVAL 30
+#define MESUREMENT_DISPLAY_DURATION 5000
 RTC_DATA_ATTR bool isFirstBoot = true; 
+RTC_DATA_ATTR SensorData lastMesurement;
 
 
 // Debbugging configuration
@@ -26,7 +28,6 @@ RTC_DATA_ATTR bool isFirstBoot = true;
 
 #define MAX_CYCLES 5
 RTC_DATA_ATTR int cycleCounter =  0;
-RTC_DATA_ATTR SensorData lastMesurement;
 
 
 // Screen configuration 
@@ -65,7 +66,6 @@ RTC_DATA_ATTR char logFilename[14]= {0};  		// Allocate 20 char  in RTC memory (
 // Touch wake up configuration
 #define TOUCH_WAKE_UP_PAD T0
 #define TOUCH_WAKE_UP_THRESHOLD 40
-#define MESUREMENT_DISPLAY_DURATION 5000
 
 
 // Initialize screen
@@ -87,12 +87,13 @@ void displayWelcomeMessage() {
 	display.setTextSize(2);             						    // Text size
 	display.setTextColor(SSD1306_WHITE); 		// Text color
 	display.setCursor(10, 25);									 // Text position
-	display.println(F("Bienvenue"));				 	   // Text to display
+	display.println("Bienvenue");				 	   // Text to display
 	display.display();
 
 	delay(2000);
-	display.clearDisplay();
-	display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
+	// display.clearDisplay();
+	// display.display();
+	// display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
 	display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
@@ -304,21 +305,15 @@ void deleteCurrentLogFile() {
 // Display mesurement on screen
 void displayMesurement() {
 	display.clearDisplay();
-	// display.display();
-	// display.clearDisplay();
-	delay(1000);
+	display.setTextSize(2);
+	display.setTextColor(SSD1306_WHITE);
 	display.setCursor(0, 0);
 	display.printf("Tem: %.1fC", lastMesurement.temperature);
 	display.setCursor(0, 20);
 	display.printf("Hum: %d%%", lastMesurement.humidity);
 	display.setCursor(0, 40);
 	display.printf("Lum: %d%%", lastMesurement.luminosity);
-	delay(2000);
 	display.display();
-	delay(2000);
-
-	Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
-	Serial.println();
 
 	delay(MESUREMENT_DISPLAY_DURATION);
 	display.ssd1306_command(SSD1306_DISPLAYOFF);
@@ -465,8 +460,8 @@ void setup() {
 	
 	// First boot handeling
 	if (isFirstBoot) {
-		initializeScreen();
-		displayWelcomeMessage();
+		// initializeScreen();
+		// displayWelcomeMessage();
 
 		timeInfo = setRTC();				// RTC setup
 		setLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
@@ -501,41 +496,10 @@ void setup() {
 		Serial.println("WOKE UP FROM TOUCHPAD");
 
 		// Screen setup
-		// initializeScreen();
+		initializeScreen();
 
 		// Display on mesurement on screen
-		// displayMesurement();
-
-		Wire.begin();
-		delay(100);
-
-		if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-			Serial.println(F("Unable to initialize OLED screen"));
-			while (true);
-		} else {
-			Serial.println("Screen successfully initialized");
-		}
-
-		delay(1000);
-		display.clearDisplay();
-		// display.display();
-		// display.clearDisplay();
-		delay(1000);
-		display.setCursor(0, 0);
-		display.printf("Tem: %.1fC", lastMesurement.temperature);
-		display.setCursor(0, 20);
-		display.printf("Hum: %d%%", lastMesurement.humidity);
-		display.setCursor(0, 40);
-		display.printf("Lum: %d%%", lastMesurement.luminosity);
-		delay(2000);
-		display.display();
-		delay(2000);
-
-		Serial.printf("Tem: %.1fC | Hum: %d%% | Lum: %.1d%%", lastMesurement.temperature, lastMesurement.humidity,  lastMesurement.luminosity);
-		Serial.println();
-
-		delay(MESUREMENT_DISPLAY_DURATION);
-		display.ssd1306_command(SSD1306_DISPLAYOFF);
+		displayMesurement();
 	}
 
 
@@ -551,7 +515,7 @@ void setup() {
 	// Deep sleep mode setup 
 	uint64_t interval = calculateNextInterval();
 
-	if (isFirstBoot) {isFirstBoot = false;}
+	if (isFirstBoot) {isFirstBoot = false;}	
 	touchSleepWakeUpEnable(TOUCH_WAKE_UP_PAD, TOUCH_WAKE_UP_THRESHOLD);		// Touch wake up configuration
 	esp_sleep_enable_timer_wakeup(interval);
 
