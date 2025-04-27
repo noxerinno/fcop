@@ -18,7 +18,7 @@ def generate_header_file(env_vars, output_path):
 
 def before_build(source, target, env):
     env_path = ".env"
-    header_path = "include/credentials.h"
+    header_path = "include/FCOP_credentials.h"
     if os.path.exists(env_path):
         vars = parse_env_file(env_path)
         generate_header_file(vars, header_path)
