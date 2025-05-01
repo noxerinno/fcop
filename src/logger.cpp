@@ -25,7 +25,7 @@ void setRtcLogFilename(int year, int month, int day) {
 		day);
 
 	if (DEBUG_LOGS) {
-		Serial.print("[DEBUG_LOGS] Logfile : ");
+		Serial.print("[DEBUG_LOGS] New log file name : ");
 		Serial.println(rtcLogFilename);
 	}
 	

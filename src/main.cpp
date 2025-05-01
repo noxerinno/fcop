@@ -34,7 +34,10 @@ void setup() {
 	// Initialize "debugger"
 	Serial.begin(115200);
 
+
 	struct tm timeInfo;						// Time information precise to the second (date to create log filename one first boot & HH:MM:SS to timestamp the log entries )
+	setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
+	tzset();
 
 	
 	// First boot handeling
@@ -42,10 +45,11 @@ void setup() {
 		initializeScreen();
 		displayWelcomeMessage();
 
-		timeInfo = setRTC();				// RTC setup
+		timeInfo = setRTC();		// RTC setup
+
 		mountSPIFFS();
 		setRtcLogFilename(timeInfo.tm_year, timeInfo.tm_mon, timeInfo.tm_mday);
-		if (DEBUG_SLEEP_CYCLES) {Serial.printf("\n\n==================== FIRST BOOT AT %02d:%02d:%02d ====================\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);}
+		if (DEBUG_SLEEP_CYCLES) {Serial.printf("\n\n=================== FIRST BOOT AT %02d:%02d:%02d ====================\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);}
 	}
 	
 	
@@ -80,7 +84,6 @@ void setup() {
 		// Display on mesurement on screen
 		displayMesurement(rtcLastMesurement);
 	}
-
 
 	// Log file cloud saving setup
 	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
