@@ -86,7 +86,7 @@ void setup() {
 	}
 
 	// Log file cloud saving setup
-	if (timeInfo.tm_hour == 0 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
+	if (timeInfo.tm_hour == 2 && timeInfo.tm_min == 0 && timeInfo.tm_sec == 0) {
 		mountSPIFFS();
 		sendLogFileToDrive();
 		deleteCurrentLogFile();

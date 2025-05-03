@@ -1,10 +1,10 @@
-# FCOP - Fait Chaud ou Pas ?
+# FCOP - Field Climate Observation Platform    <!-- FCOP = Fait chaud ou pas ? -->
 
 🌡️ A lightweight ESP32-based weather station
 
 ## About
 
-**FCOP** (short for *Fait Chaud ou Pas ?*) is a mini weather station built using an ESP32 microcontroller.  
+**FCOP** (short for *Field Climate Observation Platform*) is a mini weather station built using an ESP32 microcontroller.  
 It measures temperature, humidity, and light intensity at regular intervals while optimizing power consumption by using deep sleep modes.  
 Perfect for experimenting with sensors, low-power IoT design, and cloud data logging.
 
